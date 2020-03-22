@@ -40,8 +40,6 @@ void m_ctx_load(mips_ctx *ctx, const char *path)
 	fclose(b);
 }
 
-void mips_start_exec(mips_ctx *ctx);
-
 void *exec_fn(void *arg) {
 	mips_ctx *ctx = arg;
 	mips_start_exec(ctx);

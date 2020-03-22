@@ -1,12 +1,24 @@
 #include "common.h"
+
 #include "disasm.h"
 #include "mipsint.h"
 
 #define ZERO_R0() do{ctx->r[0]=0;}while(0)
 
+static inline int64_t INTABS(uint32_t x) {
+	const int32_t neg = (int32_t)((int32_t)x & 0x80000000) >> 31;
+	const int32_t pos = ~neg;
+	return (x & pos) | ((-x) & neg);
+}
+
+#define UPDATE_IC_PRE() /* plus 1 because of the delay slot */ \
+	do{ctx->inst_ctr += 1 + (INTABS(last_pc - *pc) / 4);}while(0)
+
+#define UPDATE_IC_POST() \
+	do{last_pc = *pc;}while(0)
+
 #define CHAIN_NEXT() \
 	do{ \
-		(ctx->inst_ctr)++; \
 		curi = nexti; \
 		nexti = MR32(*pc); \
 		*pc += 4; \
@@ -36,7 +48,7 @@
 #define START_TYPE_R_S()	do{rs = &ctx->r[I_RS()];}while(0)
 #define START_TYPE_R_DS()	do{rd = &ctx->r[I_RD()]; rs = &ctx->r[I_RS()];}while(0)
 #define START_TYPE_R_ST()	do{rs = &ctx->r[I_RS()]; rt = &ctx->r[I_RT()];}while(0)
-#define START_TYPE_R_DTH()	do{rd = &ctx->r[I_RD()]; rt = &ctx->r[I_RT()]; imm.h = I_SHF();}while(0)
+#define START_TYPE_R_DTH()	do{rd = &ctx->r[I_RD()]; rt = &ctx->r[I_RT()]; imm.shf = I_SHF();}while(0)
 #define START_TYPE_R()	do{rd = &ctx->r[I_RD()]; rs = &ctx->r[I_RS()]; rt = &ctx->r[I_RT()];}while(0)
 
 // Type-I / Signed
@@ -53,7 +65,6 @@
 
 void mips_start_exec(mips_ctx *ctx)
 {
-	ctx->inst_ctr = 0;
 	static const void *dispatch_tbl[0x80] = {
 		/* BASE OPCODES (0x00 - 0x3F) */
 		&&functor, &&bcondz, &&j, &&jal,
@@ -104,8 +115,8 @@ void mips_start_exec(mips_ctx *ctx)
 	uint32_t *const pc = &ctx->r[PC], *const al = &ctx->r[AL];
 	uint32_t *const lo = &ctx->r[LO], *const hi = &ctx->r[HI];
 	uint32_t *rd = NULL, *rs = NULL, *rt = NULL;
-	uint32_t jmp = ~0;
-	union { uint32_t u; int32_t s; uint32_t h; } imm = {~0};
+	uint32_t jmp = ~0, last_pc = *pc;
+	union { uint32_t u; int32_t s; uint32_t shf; } imm = {~0};
 
 	CHAIN_NEXT();
 
@@ -117,12 +128,14 @@ void mips_start_exec(mips_ctx *ctx)
 		// cond = I_RT()
 		// cond.0 ? >= 0 : < 0
 		// cond.4 ? set AL to return address : dont modify AL
+		UPDATE_IC_PRE();
 		START_TYPE_SI();
 		if (((int32_t)*rs < 0) ^ (*rt & 1)) {
 			if (*rt & BIT(4))
 				*al = *pc;
 			*pc += (imm.s - 1) * 4;
 		}
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	jal: // jal target
@@ -132,32 +145,42 @@ void mips_start_exec(mips_ctx *ctx)
 		//CHAIN_NEXT();
 
 	j: // j target
+		UPDATE_IC_PRE();
 		START_TYPE_J();
 		*pc = (*pc & 0xF0000000) | (jmp << 2);
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	beq: // beq $s, $t, offset
+		UPDATE_IC_PRE();
 		START_TYPE_SI();
 		if (*rs == *rt)
 			*pc += (imm.s - 1) * 4;
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	bne: // bne $s, $t, offset
+		UPDATE_IC_PRE();
 		START_TYPE_SI();
 		if (*rs != *rt)
 			*pc += (imm.s - 1) * 4;
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	blez: // blez $s, offset
+		UPDATE_IC_PRE();
 		START_TYPE_SI_SI();
 		if ((int32_t)*rs <= 0)
 			*pc += (imm.s - 1) * 4;
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	bgtz: // bgtz $s, offset
+		UPDATE_IC_PRE();
 		START_TYPE_SI_SI();
 		if ((int32_t)*rs > 0)
 			*pc += (imm.s - 1) * 4;
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	addi: // no trap handling yet
@@ -263,20 +286,20 @@ void mips_start_exec(mips_ctx *ctx)
 	sll: // sll $d, $t, h
 		if (m_inst_raw(curi)) { // canonical nop if zero
 			START_TYPE_R_DTH();
-			*rd = *rt << imm.h;
+			*rd = *rt << imm.shf;
 			ZERO_R0();
 		}
 		CHAIN_NEXT();
 
 	srl: // srl $d, $t, h
 		START_TYPE_R_DTH();
-		*rd = *rt >>imm.h;
+		*rd = *rt >>imm.shf;
 		ZERO_R0();
 		CHAIN_NEXT();
 
 	sra: // sra $d, $t, h
 		START_TYPE_R_DTH();
-		*rd = ((int32_t)*rt) >> imm.h;
+		*rd = ((int32_t)*rt) >> imm.shf;
 		ZERO_R0();
 		CHAIN_NEXT();
 
@@ -300,15 +323,19 @@ void mips_start_exec(mips_ctx *ctx)
 
 	jalr: // jalr $d, $s
 		// $d is almost always $31/$AL but it's variable
+		UPDATE_IC_PRE();
 		START_TYPE_R_DS();
 		*rd = *pc;
 		ZERO_R0();
 		*pc = *rs;
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	jr: // jr $s
+		UPDATE_IC_PRE();
 		START_TYPE_R_S();
 		*pc = *rs;
+		UPDATE_IC_POST();
 		CHAIN_NEXT();
 
 	mfhi: // mfhi $d

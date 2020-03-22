@@ -1,7 +1,7 @@
 TARGET  := mipsintp
 
 CFLAGS := -MMD -MP -march=native -mtune=native -ffast-math -fomit-frame-pointer \
-			-ggdb -std=c99 -O2 -Wall -Wextra -Wpadded
+			-ggdb -std=c99 -Ofast -Wall -Wextra -Wpadded
 LDFLAGS  := -lpthread
 
 ifeq ($(OS),Windows_NT)
@@ -32,7 +32,6 @@ clean:
 test: test/test.bin
 
 test/test.bin: test/test.c
-	@#mipsel-unknown-elf-as test/test.s -o test/test.elf
 	mipsel-unknown-elf-gcc -O2 test/test.c -nostartfiles -Ttest/link.ld -o test/test.elf
 	mipsel-unknown-elf-objcopy test/test.elf -O binary test/test.bin
 

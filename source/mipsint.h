@@ -22,6 +22,8 @@ void m_ctx_init(mips_ctx *ctx);
 void m_ctx_dump(const mips_ctx *ctx);
 void m_ctx_load_bootrom(mips_ctx *ctx, const char *path);
 
+void mips_start_exec(mips_ctx *ctx);
+
 static inline uint8_t m_mem_read8(mips_ctx *ctx, uint32_t addr) {
 	return ctx->m[addr];
 }
