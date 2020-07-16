@@ -1,29 +1,28 @@
 TARGET  := mipsintp
 
-CFLAGS := -MMD -MP -march=native -mtune=native -ffast-math -fomit-frame-pointer \
-			-ggdb -std=c99 -Ofast -Wall -Wextra -Wpadded
-LDFLAGS  := -lpthread
-
-ifeq ($(OS),Windows_NT)
-	CFLAGS	+= $(CFLAGS)
-	LDFLAGS	:= -static $(LDFLAGS)
-	TARGET	:= $(TARGET).exe
-endif
-
-CC := clang
-
 OBJDIR  := build
 SRCDIR  := source
-OBJS    := disasm.o mipsint.o instrun.o
+OBJS    := main.o MIPS/Instruction.o MIPS/TLB.o MIPS/CPU.o MIPS/CPURun.o
 _OBJS   := $(OBJS:%.o=$(OBJDIR)/%.o)
 _DEPS   := $(OBJS:%.o=$(OBJDIR)/%.d)
 
-$(TARGET): $(_OBJS)
-	$(CC) $^ $(LDFLAGS) -o $@
+CXX := clang++
+CXXFLAGS := -MMD -MP -Ofast -march=native -mtune=native -ggdb \
+			-ffast-math -fomit-frame-pointer -std=c++1z -Wall -Wextra -I$(SRCDIR)
+LDFLAGS  := -lpthread
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c
+ifeq ($(OS),Windows_NT)
+	CXXFLAGS	+= $(CXXFLAGS)
+	LDFLAGS := -static $(LDFLAGS)
+	TARGET	:= $(TARGET).exe
+endif
+
+$(TARGET): $(_OBJS)
+	$(CXX) $^ $(LDFLAGS) -o $@
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.cc
 	@mkdir -p "$(@D)"
-	$(CC) $< $(CFLAGS) -c -o $@
+	$(CXX) $< $(CXXFLAGS) -c -o $@
 
 .PHONY: clean
 clean:
@@ -31,8 +30,8 @@ clean:
 
 test: test/test.bin
 
-test/test.bin: test/test.c
-	mipsel-unknown-elf-gcc -O2 test/test.c -nostartfiles -Ttest/link.ld -o test/test.elf
+test/test.bin:
+	mipsel-unknown-elf-gcc -mno-check-zero-division -ffast-math -Os $(shell ls test/*.c test/*.s) -nostartfiles -Ttest/link.ld -o test/test.elf
 	mipsel-unknown-elf-objcopy test/test.elf -O binary test/test.bin
 
 .FORCE:

@@ -4,31 +4,34 @@ ENTRY(_start)
 
 MEMORY
 {
-    MEM (RWX) : ORIGIN = 0, LENGTH = 384
+    MEM (RWX) : ORIGIN = 0, LENGTH = 4096
 }
 
 SECTIONS
 {
-    .text : ALIGN(4) {
+    .text : ALIGN(16) {
         __text_s = ABSOLUTE(.);
-        *(.text.start);
-        *(.text*);
-        . = ALIGN(4);
+        KEEP(*(.text.start));
+        KEEP(*(.text*));
+        . = ALIGN(16);
         __text_e = ABSOLUTE(.);
     } >MEM
 
-    .data : ALIGN(4) {
-        *(.data*);
+    .data : ALIGN(16) {
+        KEEP(*(.data*));
         *(.rodata*);
-        . = ALIGN(4);
+        . = ALIGN(16);
     } >MEM
 
-    .bss : ALIGN(4) {
+    .bss : ALIGN(16) {
         __bss_start = .;
-        *(.bss*);
-        . = ALIGN(4);
+        KEEP(*(.bss*));
+        KEEP(*(.sbss*));
+        . = ALIGN(16);
         __bss_end = .;
     } >MEM
+
+    __stack_top = ORIGIN(MEM) + LENGTH(MEM);
 
     __end__ = ABSOLUTE(.);
 }
